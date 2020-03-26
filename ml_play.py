@@ -51,7 +51,7 @@ def ml_loop():
         # print(vector[0])
         # 3.4. Send the instruction for this frame to the game process
         if not ball_served:
-            comm.send_instruction(scene_info.frame, PlatformAction.SERVE_TO_LEFT)
+            comm.send_instruction(scene_info.frame, PlatformAction.SERVE_TO_RIGHT)
             vector = [-7, -7]
             ball_last_pos = (0, 500)
             ball_served = True
