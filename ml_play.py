@@ -3,6 +3,7 @@ The template of the script for the machine learning process in game pingpong
 """
 import pickle
 import numpy as np
+from os import path
 # Import the necessary modules and classes
 from mlgame.communication import ml as comm
 
@@ -32,7 +33,7 @@ def ml_loop(side: str):
     # === Here is the execution order of the loop === #
     # 1. Put the initialization code here
     ball_served = False
-    filename = "save/trained_model.pickle"
+    filename = path.join(path.dirname(__file__), 'save', 'trained_midel.pickle')
     with open(filename, 'rb') as file:
         tree = pickle.load(file)
 
