@@ -1,100 +1,119 @@
 """
-The template of the main script of the machine learning process
+The template of the script for the machine learning process in game pingpong
 """
+import pickle
+import numpy as np
+# Import the necessary modules and classes
+from mlgame.communication import ml as comm
 
-import games.arkanoid.communication as comm
-from games.arkanoid.communication import ( \
-    SceneInfo, GameStatus, PlatformAction
-)
-import games.arkanoid.game.gameobject as gameobject
 
-def ml_loop():
+def transformCommand(command):
+    if 'MOVE_RIGHT' == command:
+        return 1
+    elif 'MOVE_LEFT' == command:
+        return 2
+    else:
+        return 0
+
+def ml_loop(side: str):
     """
-    The main loop of the machine learning process
-    This loop is run in a separate process, and communicates with the game process.
-    Note that the game process won't wait for the ml process to generate the
-    GameInstruction. It is possible that the frame of the GameInstruction
-    is behind of the current frame in the game process. Try to decrease the fps
-    to avoid this situation.
+    The main loop for the machine learning process
+    The `side` parameter can be used for switch the code for either of both sides,
+    so you can write the code for both sides in the same script. Such as:
+    ```python
+    if side == "1P":
+        ml_loop_for_1P()
+    else:
+        ml_loop_for_2P()
+    ```
+    @param side The side which this script is executed for. Either "1P" or "2P".
     """
 
     # === Here is the execution order of the loop === #
-    # 1. Put the initialization code here.
+    # 1. Put the initialization code here
     ball_served = False
-    # 2. Inform the game process that ml process is ready before start the loop.
+    filename = "games/pingpong/ml/save/trained_model.pickle"
+    with open(filename, 'rb') as file:
+        tree = pickle.load(file)
+
+    feature = []
+
+    # 2. Inform the game process that ml process is ready
     comm.ml_ready()
 
-    # 3. Start an endless loop.
+    # 3. Start an endless loop
     while True:
-        # 3.1. Receive the scene information sent from the game process.
-        scene_info = comm.get_scene_info()
+        # 3.1. Receive the scene information sent from the game process
+        scene_info = comm.recv_from_game()
 
-        # 3.2. If the game is over or passed, the game process will reset
-        #      the scene and wait for ml process doing resetting job.
-        if scene_info.status == GameStatus.GAME_OVER or \
-            scene_info.status == GameStatus.GAME_PASS:
-            # Do some stuff if needed
+        # 3.2. If either of two sides wins the game, do the updating or
+        #      resetting stuff and inform the game process when the ml process
+        #      is ready.
+        if scene_info["status"] != "GAME_ALIVE":
+            # Do some updating or resetting stuff
             ball_served = False
 
-            # 3.2.1. Inform the game process that ml process is ready
+            # 3.2.1 Inform the game process that
+            #       the ml process is ready for the next round
             comm.ml_ready()
             continue
 
-        # 3.3. Put the code here to handle the scene information
-        ball_pos = scene_info.ball
-        # vector = scene_info.vector
-        plat_pos = scene_info.platform
-        # print(vector[0])
-        # 3.4. Send the instruction for this frame to the game process
+        # 3.3 Put the code here to handle the scene information
+        feature = []
+        feature.append(scene_info["ball"][0])
+        feature.append(scene_info["ball"][1])
+        feature.append(scene_info["ball_speed"][0])
+        feature.append(scene_info["ball_speed"][1])
+        feature.append(scene_info["platform_1P"][0])
+        feature.append(scene_info["platform_1P"][1])
+        feature.append(scene_info["platform_2P"][0])
+        feature.append(scene_info["platform_2P"][1])
+        feature.append(scene_info["blocker"][0])
+        feature.append(scene_info["blocker"][1])
+
+        if scene_info["ball_speed"][1] > 0 : # 球正在向下 # ball goes down
+            x = ( scene_info["platform_1P"][1]-scene_info["ball"][1] ) // scene_info["ball_speed"][1] # 幾個frame以後會需要接  # x means how many frames before catch the ball
+            pred = scene_info["ball"][0]+((scene_info["ball_speed"][0] + np.sign(scene_info["ball_speed"][0])*3)*x)  # 預測最終位置 # pred means predict ball landing site 
+            bound = pred // 200 # Determine if it is beyond the boundary
+            if (bound > 0): # pred > 200 # fix landing position
+                if (bound%2 == 0) : 
+                    pred = pred - bound*200                    
+                else :
+                    pred = 200 - (pred - 200*bound)
+            elif (bound < 0) : # pred < 0
+                if (bound%2 ==1) :
+                    pred = abs(pred - (bound+1) *200)
+                else :
+                    pred = pred + (abs(bound)*200)
+        else : # 球正在向上 # ball goes up
+            pred = 100
+        
+        feature.append(pred)
+        feature.append(pred - 5)
+        feature.append(pred - 10)
+        feature.append(pred - 15)
+        # feature.append(pred - 20)
+        feature.append(pred + 5)
+        feature.append(pred + 10)
+        feature.append(pred + 15)
+        # feature.append(pred + 20)
+
+        feature = np.array(feature)
+        feature = feature.reshape((-1, 17))
+
+        # 3.4 Send the instruction for this frame to the game process
         if not ball_served:
-            comm.send_instruction(scene_info.frame, PlatformAction.SERVE_TO_LEFT)
-            vector = [-7, -7]
-            ball_last_pos = (0, 500)
+            comm.send_to_game({"frame": scene_info["frame"], "command": "SERVE_TO_LEFT"})
             ball_served = True
         else:
-            vector = [(ball_pos[0] - ball_last_pos[0]), (ball_pos[1] - ball_last_pos[1])]
-            # if(vector[1] < 0):
-            #         goal = 100
-            # else:
-            #     intersectX = (int)((400 - ball_pos[1]) / vector[1]) * vector[0] + ball_pos[0]
-            #     # print("intersextX = ", intersectX)
-            #     if(intersectX < 0):
-            #         # print("need predict")
-            #         intersectX = 0
-            #         intersectY = (int)(abs(ball_pos[0] / vector[0])) * vector[1] + ball_pos[1]
-            #         # print("intersext X, Y = ", intersectX, intersectY)
-            #         goal = (int)((400 - intersectY) / vector[1]) * (vector[0]) * (-1)
-            #     elif(intersectX > 200):
-            #         # print("need predict")
-            #         intersectX = 200
-            #         intersectY = (int)(abs((200 - ball_pos[0]) / vector[0])) * vector[1] + ball_pos[1]
-            #         # print("intersext X, Y = ", intersectX, intersectY)
-            #         goal = 200 + (int)((400 - intersectY) / vector[1]) * (vector[0]) * (-1)
-            #     else:
-            #         goal = intersectX
-            if(vector[1] < 0):
-                    vector[0] *= -1
-                    vector[1] *= -1
-            intersectX = (int)((400 - ball_pos[1]) / vector[1]) * vector[0] + ball_pos[0]
-            if(intersectX < 0):
-                intersectX = 0
-                intersectY = (int)(abs(ball_pos[0] / vector[0])) * vector[1] + ball_pos[1]
-                goal = (int)((400 - intersectY) / vector[1]) * (vector[0]) * (-1)
-            elif(intersectX > 200):
-                intersectX = 200
-                intersectY = (int)(abs((200 - ball_pos[0]) / vector[0])) * vector[1] + ball_pos[1]
-                goal = 200 + (int)((400 - intersectY) / vector[1]) * (vector[0]) * (-1)
-            else:
-                goal = intersectX
+            command = tree.predict(feature)
 
-            goal = goal + (5 - (goal % 10))
-            # print(goal)
-
-            if(plat_pos[0] + 20 <= goal):
-                comm.send_instruction(scene_info.frame, PlatformAction.MOVE_RIGHT)
-            elif(plat_pos[0] + 20 > goal):
-                comm.send_instruction(scene_info.frame, PlatformAction.MOVE_LEFT)
-            # else:
-            #     comm.send_instruction(scene_info.frame, PlatformAction.NONE)
-
-            ball_last_pos = ball_pos
+            if command == 0:
+                comm.send_to_game({"frame": scene_info["frame"], "command": "NONE"})
+                print("0")
+            elif command == 1:
+                comm.send_to_game({"frame": scene_info["frame"], "command": "MOVE_RIGHT"})
+                print("1")
+            else :
+                comm.send_to_game({"frame": scene_info["frame"], "command": "MOVE_LEFT"})
+                print("2")
