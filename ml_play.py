@@ -32,7 +32,7 @@ def ml_loop(side: str):
     # === Here is the execution order of the loop === #
     # 1. Put the initialization code here
     ball_served = False
-    filename = "save/trained_model.pickle"
+    filename = "games/pingpong/ml/save/trained_model.pickle"
     with open(filename, 'rb') as file:
         tree = pickle.load(file)
 
@@ -73,7 +73,26 @@ def ml_loop(side: str):
 
         if scene_info["ball_speed"][1] > 0 : # 球正在向下 # ball goes down
             x = ( scene_info["platform_1P"][1]-scene_info["ball"][1] ) // scene_info["ball_speed"][1] # 幾個frame以後會需要接  # x means how many frames before catch the ball
-            pred = scene_info["ball"][0]+((scene_info["ball_speed"][0] + np.sign(scene_info["ball_speed"][0])*3)*x)  # 預測最終位置 # pred means predict ball landing site 
+            pred = scene_info["ball"][0]+(scene_info["ball_speed"][0]*x)  # 預測最終位置 # pred means predict ball landing site 
+            bound = pred // 200 # Determine if it is beyond the boundary
+            if (bound > 0): # pred > 200 # fix landing position
+                if (bound%2 == 0) : 
+                    pred = pred - bound*200                    
+                else :
+                    pred = 200 - (pred - 200*bound)
+            elif (bound < 0) : # pred < 0
+                if (bound%2 ==1) :
+                    pred = abs(pred - (bound+1) *200)
+                else :
+                    pred = pred + (abs(bound)*200)
+        elif scene_info["ball"][1] >= 240:
+            rev_bvx = 0 - scene_info["ball_speed"][0]
+            rev_bvy = 0 - scene_info["ball_speed"][1]
+            if(rev_bvy == 0):
+                x = 0
+            else:
+                x = ( scene_info["platform_1P"][1]-scene_info["ball"][1] ) // rev_bvy # 幾個frame以後會需要接  # x means how many frames before catch the ball
+            pred = scene_info["ball"][0]+(rev_bvx*x)  # 預測最終位置 # pred means predict ball landing site 
             bound = pred // 200 # Determine if it is beyond the boundary
             if (bound > 0): # pred > 200 # fix landing position
                 if (bound%2 == 0) : 
@@ -91,15 +110,15 @@ def ml_loop(side: str):
         feature.append(pred)
         feature.append(pred - 5)
         feature.append(pred - 10)
-        feature.append(pred - 15)
+        # feature.append(pred - 15)
         # feature.append(pred - 20)
         feature.append(pred + 5)
         feature.append(pred + 10)
-        feature.append(pred + 15)
+        # feature.append(pred + 15)
         # feature.append(pred + 20)
 
         feature = np.array(feature)
-        feature = feature.reshape((-1, 17))
+        feature = feature.reshape((-1, 15))
 
         # 3.4 Send the instruction for this frame to the game process
         if not ball_served:
@@ -110,10 +129,7 @@ def ml_loop(side: str):
 
             if command == 0:
                 comm.send_to_game({"frame": scene_info["frame"], "command": "NONE"})
-                print("0")
             elif command == 1:
                 comm.send_to_game({"frame": scene_info["frame"], "command": "MOVE_RIGHT"})
-                print("1")
             else :
                 comm.send_to_game({"frame": scene_info["frame"], "command": "MOVE_LEFT"})
-                print("2")
