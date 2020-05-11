@@ -32,7 +32,7 @@ def ml_loop(side: str):
     # === Here is the execution order of the loop === #
     # 1. Put the initialization code here
     ball_served = False
-    filename = "games/pingpong/ml/save/trained_model.pickle"
+    filename = path.join(path.dirname(__file__), "save", "trained_model.pickle")
     with open(filename, 'rb') as file:
         tree = pickle.load(file)
 
