@@ -3,7 +3,7 @@ The template of the script for the machine learning process in game pingpong
 """
 import pickle
 import numpy as np
-import os.path
+from os import path
 # Import the necessary modules and classes
 from mlgame.communication import ml as comm
 
