@@ -153,11 +153,11 @@ def ml_loop(side: str):
             pred = 100
         feature.append(pred)
         feature.append(pred - 5)
-        feature.append(pred - 10)
+        feature.append(pred - 7)
         # feature.append(pred - 15)
         # feature.append(pred - 20)
         feature.append(pred + 5)
-        feature.append(pred + 10)
+        feature.append(pred + 7)
         # feature.append(pred + 15)
         # feature.append(pred + 20)
 
