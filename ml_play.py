@@ -34,7 +34,8 @@ def ml_loop(side: str):
     # 1. Put the initialization code here
     ball_served = False
     blocker_last_x = 0
-    blockervx = 0
+    blocker_vx = 0
+    last_command = 0
     filename = path.join(path.dirname(__file__), "save", "trained_model.pickle")
     with open(filename, 'rb') as file:
         tree = pickle.load(file)
@@ -48,50 +49,6 @@ def ml_loop(side: str):
     while True:
         # 3.1. Receive the scene information sent from the game process
         scene_info = comm.recv_from_game()
-
-        def check_hit_blocker(ballx, bally, ballvx, ballvy, blocker_pred_x):
-            y = abs((bally - 260) // ballvy)
-            pred = ballx + ballvx * y
-            if pred < 0:
-                x = abs(ballx // ballvx)
-                bally = bally + ballvy * x
-                ballx = 0
-                ballvx *= -1
-                y = abs((bally - 260) // ballvy)
-                pred = ballx + ballvx * y
-            else:
-                x = abs((ballx - 200)// ballvx)
-                bally = bally + ballvy * x
-                ballx = 200
-                ballvx *= -1
-                y = abs((bally - 260) // ballvy)
-                pred = ballx + ballvx * y
-            
-            if(pred >= blocker_pred_x and pred <= blocker_pred_x+30):
-                ballx = pred
-                bally = 260
-                ballvx *= -1
-                ballvy *= -1
-                y = abs((420 - 260) // ballvy)
-                pred = ballx + ballvx * y
-                if pred < 0:
-                    x = abs(ballx // ballvx)
-                    bally = bally + ballvy * x
-                    ballx = 0
-                    ballvx *= -1
-                    y = abs((bally - 420) // ballvy)
-                    pred = ballx + ballvx * y
-                else:
-                    x = abs((ballx - 200)// ballvx)
-                    bally = bally + ballvy * x
-                    ballx = 200
-                    ballvx *= -1
-                    y = abs((bally - 420) // ballvy)
-                    pred = ballx + ballvx * y
-            else: pred = 100
-
-            return pred
-            
 
         # 3.2. If either of two sides wins the game, do the updating or
         #      resetting stuff and inform the game process when the ml process
@@ -112,64 +69,58 @@ def ml_loop(side: str):
         feature.append(scene_info["ball_speed"][0])
         feature.append(scene_info["ball_speed"][1])
         feature.append(scene_info["platform_1P"][0])
-        # feature.append(scene_info["platform_1P"][1])
-        feature.append(scene_info["platform_2P"][0])
-        # feature.append(scene_info["platform_2P"][1])
+        if scene_info["ball"][1] == 80:
+            feature.append(scene_info["ball"][0])
+        else: feature.append(1000)
         feature.append(scene_info["blocker"][0])
-        feature.append(scene_info["blocker"][1])
 
         if(blocker_last_x != -99):
-            blockervx = scene_info["blocker"][0] - blocker_last_x
+            blocker_vx = scene_info["blocker"][0] - blocker_last_x
+            if scene_info["blocker"][0] == 0: blocker_vx = 5
+            elif scene_info["blocker"][0] == 170: blocker_vx = -5
         else:
-            blockervx = -99
+            blocker_vx = -99
 
-        if(scene_info["ball"][1] >= 240 and scene_info["ball_speed"][1] < 0):
-            ballx = scene_info["ball"][0]
-            bally = scene_info["ball"][1]
-            ballvx = scene_info["ball_speed"][0]
-            ballvy = scene_info["ball_speed"][1]
-            blocker_pred_x = scene_info["blocker"][0] + blockervx*(abs((bally - 260) // ballvy))
-            if blocker_pred_x < 0: blocker_pred_x = abs(blocker_pred_x)
-            elif blocker_pred_x > 170: blocker_pred_x = 170 - (abs(blocker_pred_x) - 170)
+        if scene_info["ball_speed"][1] > 0 and (scene_info["ball"][1]+scene_info["ball_speed"][1]) >= 415 and last_command == 0:
+            y = abs((415 - scene_info["ball"][1]) // scene_info["ball_speed"][1])
+            pred = scene_info["ball"][0] + scene_info["ball_speed"][0] * y
 
-            pred = check_hit_blocker(ballx=ballx, bally=bally, ballvx=ballvx, ballvy=ballvy, blocker_pred_x=blocker_pred_x)
-        
         elif scene_info["ball_speed"][1] > 0 : # 球正在向下 # ball goes down
-            x = ( scene_info["platform_1P"][1]-scene_info["ball"][1] ) // scene_info["ball_speed"][1] 
-            pred = scene_info["ball"][0]+(scene_info["ball_speed"][0]*x) 
-            bound = pred // 200 
-            if (bound > 0):
-                if (bound%2 == 0):
-                    pred = pred - bound*200 
+            x = ( scene_info["platform_1P"][1]-scene_info["ball"][1] ) // scene_info["ball_speed"][1] # 幾個frame以後會需要接  # x means how many frames before catch the ball
+            pred = scene_info["ball"][0]+(scene_info["ball_speed"][0]*x)  # 預測最終位置 # pred means predict ball landing site 
+            bound = pred // 200 # Determine if it is beyond the boundary
+            if (bound > 0): # pred > 200 # fix landing position
+                if (bound%2 == 0) : 
+                    pred = pred - bound*200                    
                 else :
                     pred = 200 - (pred - 200*bound)
-            elif (bound < 0) :
-                if bound%2 ==1:
+            elif (bound < 0) : # pred < 0
+                if (bound%2 ==1) :
                     pred = abs(pred - (bound+1) *200)
                 else :
                     pred = pred + (abs(bound)*200)
-
         else : # 球正在向上 # ball goes up
             pred = 100
+
         feature.append(pred)
         feature.append(pred - 5)
-        feature.append(pred - 7)
-        # feature.append(pred - 15)
-        # feature.append(pred - 20)
+        feature.append(pred - 10)
+        feature.append(pred - 15)
         feature.append(pred + 5)
-        feature.append(pred + 7)
-        # feature.append(pred + 15)
-        # feature.append(pred + 20)
+        feature.append(pred + 10)
+        feature.append(pred + 15)
 
         feature = np.array(feature)
-        feature = feature.reshape((-1, 13))
+        feature = feature.reshape((-1, 14))
 
         # 3.4 Send the instruction for this frame to the game process
         if not ball_served:
             comm.send_to_game({"frame": scene_info["frame"], "command": "SERVE_TO_LEFT"})
+            last_command = 0
             ball_served = True
         else:
             command = tree.predict(feature)
+            last_command = command
 
             if command == 0:
                 comm.send_to_game({"frame": scene_info["frame"], "command": "NONE"})
