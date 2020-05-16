@@ -82,8 +82,8 @@ def ml_loop(side: str):
             blocker_vx = -99
 
         if scene_info["ball_speed"][1] > 0 and (scene_info["ball"][1]+scene_info["ball_speed"][1]) >= 415 and last_command == 0:
-            y = abs((415 - scene_info["ball"][1]) // scene_info["ball_speed"][1])
-            pred = scene_info["ball"][0] + scene_info["ball_speed"][0] * y
+            y = abs((415 - scene_info["ball"][1]) / scene_info["ball_speed"][1])
+            pred = (int)(scene_info["ball"][0] + scene_info["ball_speed"][0] * y)
 
         elif scene_info["ball_speed"][1] > 0 : # 球正在向下 # ball goes down
             x = ( scene_info["platform_1P"][1]-scene_info["ball"][1] ) // scene_info["ball_speed"][1] # 幾個frame以後會需要接  # x means how many frames before catch the ball
@@ -104,14 +104,10 @@ def ml_loop(side: str):
 
         feature.append(pred)
         feature.append(pred - 5)
-        feature.append(pred - 10)
-        feature.append(pred - 15)
         feature.append(pred + 5)
-        feature.append(pred + 10)
-        feature.append(pred + 15)
 
         feature = np.array(feature)
-        feature = feature.reshape((-1, 14))
+        feature = feature.reshape((-1, 10))
 
         # 3.4 Send the instruction for this frame to the game process
         if not ball_served:
@@ -124,11 +120,8 @@ def ml_loop(side: str):
 
             if command == 0:
                 comm.send_to_game({"frame": scene_info["frame"], "command": "NONE"})
-                print("0")
             elif command == 1:
                 comm.send_to_game({"frame": scene_info["frame"], "command": "MOVE_RIGHT"})
-                print("1")
             else :
                 comm.send_to_game({"frame": scene_info["frame"], "command": "MOVE_LEFT"})
-                print("2")
         blocker_last_x = scene_info["blocker"][0]
